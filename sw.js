@@ -1,5 +1,5 @@
 // Catatan Keuangan: service worker. Ubah V setiap rilis supaya HP mendeteksi versi baru.
-const V = "2.6";
+const V = "2.7";
 const CORE = "catatan-core-" + V, EXT = "catatan-ext";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
