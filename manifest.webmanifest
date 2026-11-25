@@ -1,6 +1,6 @@
 {
-  "name": "Catatan Keuangan",
-  "short_name": "Keuangan",
+  "name": "Nyatet",
+  "short_name": "Nyatet",
   "description": "Catatan keuangan pribadi: pengeluaran, pemasukan, akun, dan laporan.",
   "lang": "id",
   "start_url": "./",
