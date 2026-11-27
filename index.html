@@ -305,6 +305,7 @@ body{font-variant-numeric:tabular-nums}
         <input id="cn" placeholder="Nama kategori">
         <input id="cc" type="color" value="#0ea5e9">
         <button class="btn" id="cadd">+</button>
+        <select id="cty" class="full" style="grid-column:1/-1"><option value="out">Untuk pengeluaran</option><option value="in">Untuk pemasukan</option></select>
       </div>
     </section>
 
@@ -461,6 +462,8 @@ body{font-variant-numeric:tabular-nums}
       <button class="btn sec" id="uireset" style="width:100%;margin-top:10px">Kembalikan ke bawaan</button>
     </section>
 
+    <section class="card span2" id="cRepNav" style="padding:8px"><div class="seg" id="repSeg"></div></section>
+
     <section class="card span2" id="cWeek">
       <h2>📅 Ringkasan 7 hari</h2>
       <div id="wkBody"></div>
@@ -477,6 +480,7 @@ body{font-variant-numeric:tabular-nums}
 
     <section class="card" id="cInfo">
       <h2>Tentang &amp; penyimpanan</h2>
+      <button class="btn sec" style="width:100%;margin-bottom:8px" onclick="openGuide()">📖 Panduan: arti tiap tombol dan fitur</button>
       <div class="crow"><span>Versi aplikasi</span><b id="verTxt"></b></div>
       <div class="crow"><span>Penyimpanan permanen</span><b id="stTxt"></b></div>
       <button class="btn sec" id="stBtn" style="width:100%;margin-top:6px;display:none">Minta perlindungan</button>
@@ -542,14 +546,15 @@ const isLocal=id=>/^l\d+$/.test(id);
 const KINDS={"Bank konvensional":"🏦","Bank digital":"📱","Dompet digital":"👛","Tunai":"💵","Saham":"📈","Kripto":"🪙","Emas":"🥇","Reksadana":"🧺","Investasi lain":"💼","Tabungan":"🐷"};
 const INVK=["Saham","Kripto","Emas","Reksadana","Investasi lain"],isInv=a=>INVK.includes(a.kind),isSave=a=>a.kind==="Tabungan";
 const accName=id=>((cfg.accounts||[]).find(a=>a.id===id)||{}).n||"";
-function allCats(){const o=Object.assign({},BASE);(cfg.cats||[]).forEach(c=>{o[c.n]={e:c.e||"🏷️",c:c.c,k:[],custom:1}});return o}
-function catInfo(t){if(t.type==="tf")return{e:"🔄",c:"#64748b"};if(t.type==="adj")return{e:"⚖️",c:"#64748b"};return (isIn(t)?INC:allCats())[t.cat]||{e:"📦",c:"#94a3b8"}}
+function allCats(){const o=Object.assign({},BASE);(cfg.cats||[]).filter(c=>!c.in).forEach(c=>{o[c.n]={e:c.e||"🏷️",c:c.c,k:[],custom:1}});return o}
+function incCats(){const o=Object.assign({},INC);(cfg.cats||[]).filter(c=>c.in).forEach(c=>{o[c.n]={e:c.e||"💰",c:c.c,k:[],custom:1}});return o}
+function catInfo(t){if(t.type==="tf")return{e:"🔄",c:"#64748b"};if(t.type==="adj")return{e:"⚖️",c:"#64748b"};return (isIn(t)?incCats():allCats())[t.cat]||{e:"📦",c:"#94a3b8"}}
 function fillCats(){
-  const src=type==="in"?INC:allCats(),keep=$("cat").value;
+  const src=type==="in"?incCats():allCats(),keep=$("cat").value;
   $("cat").innerHTML=Object.keys(src).map(k=>`<option>${esc(k)}</option>`).join("");
   if(src[keep])$("cat").value=keep;
   const fk=$("fcat").value;
-  $("fcat").innerHTML='<option value="">Semua kategori</option>'+[...new Set([...Object.keys(allCats()),...Object.keys(INC),...tx.map(t=>t.cat).filter(Boolean)])].map(k=>`<option>${esc(k)}</option>`).join("");
+  $("fcat").innerHTML='<option value="">Semua kategori</option>'+[...new Set([...Object.keys(allCats()),...Object.keys(incCats()),...tx.map(t=>t.cat).filter(Boolean)])].map(k=>`<option>${esc(k)}</option>`).join("");
   $("fcat").value=fk;
   const oo=Object.keys(allCats()).map(k=>`<option>${esc(k)}</option>`).join("");
   {const v=$("cbc").value;$("cbc").innerHTML=oo;if(allCats()[v])$("cbc").value=v}fillRc();
@@ -605,6 +610,13 @@ async function del(id){
   tx=tx.filter(x=>x.id!==id);persist();render();
 }
 window.del=del;window.startEdit=startEdit;
+function safeChip(uang){
+  try{const end=today().slice(0,8)+pad(new Date(+today().slice(0,4),+today().slice(5,7),0).getDate()),td=today();let up=0;
+    (cfg.recur||[]).filter(r=>!r.paused).forEach(r0=>{const r=legacyToNew(r0);if(r.type==="in")return;let i=r.i||0,n=0;while(n++<62){const d=recDate(r,i);if(d>end)break;if(d>td)up+=r.amt;i++}});
+    (cfg.debts||[]).forEach(d=>{if(d.dir==="utang"&&d.due&&d.due<=end&&d.amt>d.paid)up+=d.amt-d.paid});
+    return up>0?`<div class="chip" title="Uang di akun uang dikurangi tagihan berulang dan utang yang jatuh tempo sampai akhir bulan">🛡️ Aman dipakai <b>${sg(uang-up)}</b></div>`:""}catch(e){return ""}
+}
+window.dupTx=async id=>{const t=tx.find(x=>x.id===id);if(!t)return;const c=Object.assign({},t);delete c.id;delete c.ts;c.date=today();c.time=nowHM();const nid=await addTx(c);toast("Diduplikat ke hari ini: "+t.note,()=>delDirect(nid))};
 
 async function saveCfg(){
   persistCfg();
@@ -613,8 +625,8 @@ async function saveCfg(){
 }
 $("budSave").onclick=()=>{cfg.budget=Number($("bud").value.replace(/\D/g,""))||0;saveCfg()};
 $("cadd").onclick=()=>{
-  const n=$("cn").value.trim();if(!n||allCats()[n]||INC[n])return;
-  cfg.cats=(cfg.cats||[]).concat({n,e:$("ce").value.trim()||"🏷️",c:$("cc").value});
+  const n=$("cn").value.trim();if(!n||allCats()[n]||incCats()[n]){if(n)toast("Nama kategori itu sudah ada");return}
+  cfg.cats=(cfg.cats||[]).concat(Object.assign({n,e:$("ce").value.trim()||"🏷️",c:$("cc").value},$("cty").value==="in"?{in:1}:{}));
   $("cn").value="";$("ce").value="";saveCfg();
 };
 window.delCat=n=>{cfg.cats=cfg.cats.filter(c=>c.n!==n);saveCfg()};
@@ -675,14 +687,14 @@ function render(){
   $("bars").innerHTML=ds.map((d,i)=>`<div class="bar"><span>${sums[i]?short(sums[i]):""}</span><i style="height:${sums[i]/mx*90}px"></i><span>${hari[new Date(d+"T00:00").getDay()]}</span></div>`).join("");
 
   // chips kategori custom
-  $("chips").innerHTML=(cfg.cats||[]).length?cfg.cats.map(c=>`<div class="chip"><i class="dot" style="background:${esc(c.c)}"></i>${esc(c.e)} ${esc(c.n)}<button title="Hapus" onclick="delCat('${esc(c.n).replace(/'/g,"\\'")}')">×</button></div>`).join(""):'<div class="hint">Belum ada. Tambah di bawah, misal 🐱 Kucing.</div>';
+  $("chips").innerHTML=(cfg.cats||[]).length?cfg.cats.map(c=>`<div class="chip"><i class="dot" style="background:${esc(c.c)}"></i>${esc(c.e)} ${esc(c.n)}${c.in?' <small style="color:var(--ok)">masuk</small>':""}<button title="Hapus" onclick="delCat('${esc(c.n).replace(/'/g,"\\'")}')">×</button></div>`).join(""):'<div class="hint">Belum ada. Tambah di bawah, misal 🐱 Kucing.</div>';
 
   // riwayat (filter + cari)
   const q=$("q").value.trim().toLowerCase(),fc=$("fcat").value,fa=$("facc").value;
   const rg=$("fper").value==="r";let d1=$("fd1").value||"0000-00-00",d2=$("fd2").value||"9999-99-99";if(d1>d2)[d1,d2]=[d2,d1];
   $("frange").style.display=rg?"":"none";
   const base=rg?tx.filter(t=>t.date>=d1&&t.date<=d2):mAll;
-  const m=base.filter(t=>(!fc||t.cat===fc)&&(!fa||t.acc===fa||t.to===fa)&&(!q||(t.tag||"").toLowerCase().includes(q)||t.note.toLowerCase().includes(q)||t.cat.toLowerCase().includes(q))).sort((a,b)=>b.date.localeCompare(a.date)||(b.time||"").localeCompare(a.time||"")||(b.ts||0)-(a.ts||0));
+  const qd=q.replace(/\D/g,""),m=base.filter(t=>(!fc||t.cat===fc)&&(!fa||t.acc===fa||t.to===fa)&&(!q||(t.tag||"").toLowerCase().includes(q)||t.note.toLowerCase().includes(q)||t.cat.toLowerCase().includes(q)||(qd.length>=3&&String(t.amt).includes(qd)))).sort((a,b)=>b.date.localeCompare(a.date)||(b.time||"").localeCompare(a.time||"")||(b.ts||0)-(a.ts||0));
   const hs=$("hSum");hs.style.display=rg?"":"none";
   if(rg){const fl=d=>d==="0000-00-00"?"awal":d==="9999-99-99"?"akhir":new Date(d+"T00:00").toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"});hs.textContent=`${fl(d1)} sampai ${fl(d2)}: ${m.length} transaksi · masuk ${rp(sumA(m.filter(isIn)))} · keluar ${rp(sumA(m.filter(isOut)))}`}
   let h="",last="";
@@ -690,7 +702,7 @@ function render(){
     if(t.date!==last){last=t.date;const dm=m.filter(x=>x.date===t.date).reduce((s,x)=>s+(isIn(x)?x.amt:isOut(x)?-x.amt:isAdj(x)?adjV(x):0),0);
       h+=`<div class="day"><span>${new Date(t.date+"T00:00").toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"short"})}</span><span>${dm<0?"-":"+"}${rp(Math.abs(dm))}</span></div>`}
     const c=catInfo(t),ad=isAdj(t),i=isIn(t)||(ad&&t.dir>=0);
-    h+=`<div class="row"><div class="ic" style="background:${c.c}22">${c.e}</div><div class="m" onclick="startEdit('${t.id}')"><b>${esc(t.note)}</b><span>${t.time?t.time+" · ":""}${t.type==="tf"?esc(accName(t.acc))+" → "+esc(accName(t.to)):(ad?"Penyesuaian":esc(t.cat))+(t.acc?" · "+esc(accName(t.acc)):"")}${(t.tag?" · #"+esc(t.tag):"")+(t.nw==="k"?" · kebutuhan":t.nw==="i"?" · keinginan":"")}</span></div><div class="amt" style="color:${i?"var(--ok)":"inherit"}">${ad?(t.dir<0?"-":"+"):i?"+":""}${rp(t.amt)}</div>${askId===t.id?`<button class="ib ask" onclick="del('${t.id}')">Yakin?</button>`:`<button class="ib" title="Hapus" onclick="del('${t.id}')">🗑️</button>`}</div>`;
+    h+=`<div class="row"><div class="ic" style="background:${c.c}22">${c.e}</div><div class="m" onclick="startEdit('${t.id}')"><b>${esc(t.note)}</b><span>${t.time?t.time+" · ":""}${t.type==="tf"?esc(accName(t.acc))+" → "+esc(accName(t.to)):(ad?"Penyesuaian":esc(t.cat))+(t.acc?" · "+esc(accName(t.acc)):"")}${(t.tag?" · #"+esc(t.tag):"")+(t.nw==="k"?" · kebutuhan":t.nw==="i"?" · keinginan":"")}</span></div><div class="amt" style="color:${i?"var(--ok)":"inherit"}">${ad?(t.dir<0?"-":"+"):i?"+":""}${rp(t.amt)}</div>${ad?"":`<button class="ib" title="Duplikat ke hari ini" onclick="dupTx('${t.id}')">⧉</button>`}${askId===t.id?`<button class="ib ask" onclick="del('${t.id}')">Yakin?</button>`:`<button class="ib" title="Hapus" onclick="del('${t.id}')">🗑️</button>`}</div>`;
   });
   $("list").innerHTML=(h||`<div class="empty">${ILL.box}<div>Tidak ada transaksi yang cocok</div></div>`)+(m.length>histLimit?`<button class="btn sec" style="width:100%;margin-top:8px" onclick="histLimit+=40;render()">Lihat lebih banyak (${m.length-histLimit} lagi)</button>`:"");
   render2();
@@ -819,6 +831,34 @@ window.openEdit=id=>{
   $("sheet").style.display="flex";
   setTimeout(()=>{const e=document.getElementById("aj_"+id);if(e)e.focus()},60);
 };
+
+window.tfSheet=(id,sgn)=>{
+  const A=cfg.accounts||[],a=A.find(x=>x.id===id);if(!a)return;
+  const others=A.filter(o=>o.id!==id).sort((x,y)=>(isInv(x)||isSave(x))-(isInv(y)||isSave(y)));
+  const money0=!isInv(a)&&!isSave(a);
+  if(!others.length&&!(sgn>0&&money0)){toast("Buat akun lain dulu di kartu Uang saya, supaya uangnya punya asal atau tujuan");return}
+  const inv=isInv(a),add=sgn>0,ttl=add?(inv?"Tambah modal":"Tambah dana"):(inv?"Tarik dari investasi":"Kurangi dana");
+  $("shBody").innerHTML=`<h2 style="margin-bottom:6px">${add?"➕":"➖"} ${ttl} · ${esc(a.n)}</h2>
+  <div class="hint" style="margin:0 0 8px">${add?`Uang masuk ke ${esc(a.n)}${money0?". Pilih Pemasukan baru kalau uangnya dari luar (gaji, bonus), atau pilih akun lain kalau uangnya dipindah dari akunmu":", diambil dari akun yang kamu pilih"}.`:`Uang keluar dari ${esc(a.n)}, dipindah ke akun yang kamu pilih.`}${inv?" Ini mengubah modal, bukan untung rugi. Untuk memperbarui nilai pasar pakai ✏️.":""}</div>
+  <small class="l">Nominal (Rp)</small><input id="tfn" type="text" inputmode="numeric" autocomplete="off" placeholder="0" style="font-size:16px">
+  <small class="l" style="margin-top:8px">${add?"Diambil dari":"Dipindahkan ke"}</small><select id="tfw" class="full" onchange="tfSrc()">${add&&money0?`<option value="__in">💼 Pemasukan baru (gaji, bonus, dll)</option>`:""}${others.map(o=>`<option value="${esc(o.id)}">${KINDS[o.kind]||"💰"} ${esc(o.n)}</option>`).join("")}</select>
+  <div id="tfkw" style="display:none"><small class="l" style="margin-top:8px">Kategori pemasukan</small><select id="tfk" class="full">${Object.keys(incCats()).map(k=>`<option>${esc(k)}</option>`).join("")}</select></div>
+  <small class="l" style="margin-top:8px">Catatan (opsional)</small><input id="tfc" type="text" autocomplete="off" placeholder="${add?"Setor":"Tarik"}" style="font-size:16px">
+  <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" style="flex:1" onclick="tfGo('${esc(id)}',${sgn})">Simpan</button><button class="btn sec" style="flex:1" onclick="closeSheet()">Batal</button></div>`;
+  $("tfn").addEventListener("input",money);tfSrc();
+  $("sheet").style.display="flex";setTimeout(()=>{try{$("tfn").focus()}catch(e){}},60);
+};
+window.tfSrc=()=>{const w=$("tfw"),k=$("tfkw");if(k)k.style.display=(w&&w.value==="__in")?"":"none"};
+window.tfGo=async(id,sgn)=>{
+  const a=(cfg.accounts||[]).find(x=>x.id===id);if(!a)return;
+  const amt=num($("tfn").value),o=$("tfw").value;
+  if(!amt){toast("Isi nominal lebih dari 0");$("tfn").focus();return}
+  if(sgn<0&&(isSave(a)||isInv(a))){const bal=balances(null).r[id].bal;if(amt>bal){toast("Melebihi saldo akun ini ("+rp(bal)+")");return}}
+  if(o==="__in"){const cat=$("tfk").value||"Pemasukan lain",nid=await addTx({amt,cat,type:"in",note:$("tfc").value.trim()||cat,date:today(),acc:id,to:"",nw:"",tag:"",time:nowHM()});closeSheet();toast("Pemasukan "+cat+" "+rp(amt)+" masuk ke "+a.n,()=>delDirect(nid));return}
+  const oa=(cfg.accounts||[]).find(x=>x.id===o),nm=$("tfc").value.trim()||(sgn>0?(isInv(a)?"Tambah modal ":"Tambah dana ")+a.n:(isInv(a)?"Tarik dari ":"Kurangi dana ")+a.n);
+  const t={amt,cat:"Transfer",type:"tf",note:nm,date:today(),acc:sgn>0?o:id,to:sgn>0?id:o,nw:"",tag:"",time:nowHM()};
+  const nid=await addTx(t);closeSheet();toast((sgn>0?"Masuk ke ":"Keluar dari ")+a.n+" "+rp(amt)+(oa?" ("+oa.n+")":""),()=>delDirect(nid));
+};
 const sg=v=>HIDE?rp(0):(v<0?"-":"")+rp(Math.abs(v));
 function renderAcc(ym){
   const A=cfg.accounts||[],{r,un}=balances(ym),ago90=fmtD(new Date(Date.now()-90*864e5));
@@ -840,7 +880,8 @@ function renderAcc(ym){
     let dp="";
     if(delP===a.id){const u=accUse(a.id),others=A.filter(o=>o.id!==a.id&&(isInv(o)===isInv(a)));
       dp=`<div class="alert" style="margin:8px 0 2px;border-color:var(--bad)"><b style="font-size:12.5px">Akun ini punya ${u.tx.length} transaksi${u.dbt?` dan ${u.dbt} catatan utang/aset`:""}.</b><div class="hint" style="margin:3px 0 6px">Mau diapakan? Saldo akun lain bisa berubah kalau transaksinya dilepas atau dihapus.</div><select id="dm_${a.id}" style="width:100%;margin-bottom:6px">${others.map(o=>`<option value="mv:${esc(o.id)}">Pindahkan semuanya ke ${esc(o.n)}</option>`).join("")}<option value="un">Lepas saja (jadi tanpa akun)</option><option value="rm">Hapus akun dan ${u.tx.length} transaksinya</option></select><div style="display:flex;gap:6px"><button class="btn tsm" style="background:var(--bad)" onclick="delAccGo('${a.id}')">Hapus akun</button><button class="btn sec tsm" onclick="delP=null;render()">Batal</button></div></div>`}
-    return `<div class="arow"><div style="min-width:0;flex:1"><b>${KINDS[a.kind]||"💰"} ${esc(a.n)}</b><div class="hint" style="margin:1px 0">${sub}</div>${bar}${panel}${dp}</div><div style="text-align:right;white-space:nowrap"><b>${sg(v)}</b><br>${btns}<button class="ib" title="Lihat aliran uang" onclick="goFlow('${a.id}')">🔀</button><button class="ib" title="${sv?"Ubah saldo / target":"Ubah saldo"}" onclick="openEdit('${a.id}')">✏️</button>${askA===a.id?`<button class="ib ask" onclick="delAcc('${a.id}')">Yakin?</button>`:`<button class="ib" title="Hapus" onclick="delAcc('${a.id}')">🗑️</button>`}</div></div>`};
+    const tb=`<button class="ib" title="${inv?"Tambah modal":"Tambah dana"}" onclick="tfSheet('${a.id}',1)">➕</button><button class="ib" title="${inv?"Tarik ke akun":"Kurangi dana"}" onclick="tfSheet('${a.id}',-1)">➖</button>`;
+    return `<div class="arow"><div style="min-width:0;flex:1"><b>${KINDS[a.kind]||"💰"} ${esc(a.n)}</b><div class="hint" style="margin:1px 0">${sub}</div>${bar}${panel}${dp}</div><div style="text-align:right;white-space:nowrap"><b>${sg(v)}</b><br>${tb}<button class="ib" title="Lihat aliran uang" onclick="goFlow('${a.id}')">🔀</button><button class="ib" title="${sv?"Ubah saldo / target":"Ubah saldo"}" onclick="openEdit('${a.id}')">✏️</button>${askA===a.id?`<button class="ib ask" onclick="delAcc('${a.id}')">Yakin?</button>`:`<button class="ib" title="Hapus" onclick="delAcc('${a.id}')">🗑️</button>`}</div></div>`};
   const U=A.filter(a=>!isInv(a)&&!isSave(a)),S=A.filter(isSave),I=A.filter(isInv),uT=U.reduce((t,a)=>t+r[a.id].bal,0),sT=S.reduce((t,a)=>t+r[a.id].bal,0),iT=I.reduce((t,a)=>t+r[a.id].bal+(a.g||0),0);
   const head=(t,v)=>`<div style="display:flex;justify-content:space-between;align-items:baseline;margin:8px 0 2px"><b style="font-size:11px;color:var(--mut)">${t}</b><b style="font-size:13px">${v}</b></div>`;
   $("accList").innerHTML=A.length?(U.length?head("💵 UANG",sg(uT))+U.map(row).join(""):"")+(S.length?head("🐷 TABUNGAN",sg(sT))+S.map(row).join(""):"")+(I.length?head("📈 INVESTASI",sg(iT))+I.map(row).join(""):""):'<div class="hint">Belum ada akun. Tekan Tambah.</div>';
@@ -881,20 +922,28 @@ window.delAccGo=async id=>{
   delP=null;toast("Akun "+a0.n+" dihapus: "+msg);saveCfg()};
 
 // ===== tab / bubble =====
-const TABS=[["catat","📝 Catat",["cType","cQuick","cForm","cHist"]],["uang","💰 Uang",["cWealth","cNW","cAcc","cDebt"]],["laporan","📊 Laporan",["cWeek","cRep","cFlow","cCal","cInsight","cTrend","cDonut","cBars","cCmp","cTag"]],["budget","🎯 Budget",["cBud","cCatBud"]],["berulang","🔁 Berulang",["cRecur"]],["atur","⚙️ Pengaturan",["cMode","cCats","cUI","cTidy","cExp","cInfo"]]];
+const TABS=[["catat","📝 Catat",["cType","cQuick","cForm","cHist"]],["uang","💰 Uang",["cWealth","cNW","cAcc","cDebt"]],["laporan","📊 Laporan",["cRepNav","cWeek","cRep","cFlow","cCal","cInsight","cTrend","cDonut","cBars","cCmp","cTag"]],["budget","🎯 Budget",["cBud","cCatBud"]],["berulang","🔁 Berulang",["cRecur"]],["atur","⚙️ Pengaturan",["cMode","cCats","cUI","cTidy","cExp","cInfo"]]];
 let tab="catat";try{tab=localStorage.getItem("catatan-tab")||"catat"}catch(e){}
 if(!TABS.some(x=>x[0]===tab))tab="catat";
-const LAY={catat:{t:["cType","cQuick"],l:["cForm"],r:["cHist"]},uang:{t:["cWealth"],l:["cNW","cAcc"],r:["cDebt"]},laporan:{l:["cWeek","cRep"],r:["cFlow","cCal","cInsight","cTrend","cDonut","cBars","cCmp","cTag"]},budget:{l:["cBud"],r:["cCatBud"]},berulang:{l:["cRecur"]},atur:{l:["cMode","cUI","cExp"],r:["cCats","cTidy","cInfo"]}};
+const LAY={catat:{t:["cType","cQuick"],l:["cForm"],r:["cHist"]},uang:{t:["cWealth"],l:["cNW","cAcc"],r:["cDebt"]},laporan:{t:["cRepNav"],l:["cWeek","cRep"],r:["cFlow","cCal","cInsight","cTrend","cDonut","cBars","cCmp","cTag"]},budget:{l:["cBud"],r:["cCatBud"]},berulang:{l:["cRecur"]},atur:{l:["cMode","cUI","cExp"],r:["cCats","cTidy","cInfo"]}};
 function placeCards(){
   const z={t:$("gtop"),l:$("gcL"),r:$("gcR")},OL=orderList();
   const SW={catat:["cForm","cHist"],budget:["cBud","cCatBud"]};
   TABS.forEach(([k,,ids])=>{let L=LAY[k]||{};if(SW[k]&&OL.indexOf(SW[k][1])<OL.indexOf(SW[k][0])){L=Object.assign({},L,{l:[SW[k][1]],r:[SW[k][0]]})}ids.forEach(id=>{const e=$(id);if(!e)return;const zone=(L.t||[]).includes(id)?"t":(L.r||[]).includes(id)?"r":"l";if(e.parentNode!==z[zone])z[zone].appendChild(e)})});
 }
 placeCards();
+const REPG={Ringkasan:["cWeek","cRep","cInsight"],Pola:["cFlow","cCal","cTrend","cDonut"],Bandingkan:["cBars","cCmp","cTag"]};
+let repGrp="Ringkasan";try{repGrp=localStorage.getItem("catatan-rg")||"Ringkasan"}catch(e){}if(!REPG[repGrp])repGrp="Ringkasan";
+const visG=()=>Object.keys(REPG).filter(g=>REPG[g].some(i=>!hid(i)));
+function fixRepGrp(){const v=visG();if(v.length&&!v.includes(repGrp))repGrp=v[0]}
+function renderRepSeg(){const e=$("repSeg");if(!e)return;const v=visG();e.style.gridTemplateColumns="repeat("+Math.max(v.length,1)+",1fr)";$("cRepNav").dataset.one=v.length<2?"1":"";e.innerHTML=v.map(g=>`<button class="${g===repGrp?"on":""}" onclick="setRepGrp('${g}')">${g}</button>`).join("")}
+window.setRepGrp=g=>{repGrp=g;try{localStorage.setItem("catatan-rg",g)}catch(e){}showTab("laporan")};
 function showTab(t,scroll){
   const tb0=TABS.find(x=>x[0]===t);if(!tb0||tb0[2].every(hid))t="catat";
   tab=t;try{localStorage.setItem("catatan-tab",t)}catch(e){}
-  TABS.forEach(([k,,ids])=>ids.forEach(id=>{const e=$(id);if(e)e.style.display=(k===t&&!hid(id))?"":"none"}));
+  fixRepGrp();
+  TABS.forEach(([k,,ids])=>ids.forEach(id=>{const e=$(id);if(e)e.style.display=(k===t&&!hid(id)&&!(id==="cRepNav"&&visG().length<2)&&!(k==="laporan"&&id!=="cRepNav"&&REPG[repGrp]&&!REPG[repGrp].includes(id)))?"":"none"}));
+  renderRepSeg();
   ["gtop","gcL","gcR"].forEach(i=>{const w=$(i);w.classList.toggle("nul",![...w.children].some(c=>c.style.display!=="none"))});
   const V=TABS.filter(x=>x[2].some(i=>!hid(i))).map(x=>x[0]),ix=V.indexOf(t),arr=(cfg.ui||{}).arrows!==false;
   $("tabs").innerHTML=(arr?`<button class="ar" id="tprevb" onclick="goTab(-1)" ${ix<=0?"disabled":""} aria-label="Tab sebelumnya">‹</button>`:"")+V.map(k=>{const lb=TABS.find(x=>x[0]===k)[1],sp=lb.indexOf(" ");return `<button class="tb${k===t?" on":""}" onclick="showTab('${k}',1)"><i>${lb.slice(0,sp)}</i><span>${lb.slice(sp+1)}</span></button>`}).join("")+(arr?`<button class="ar" id="tnextb" onclick="goTab(1)" ${ix>=V.length-1?"disabled":""} aria-label="Tab berikutnya">›</button>`:"");
@@ -946,7 +995,7 @@ function render3(ym){
   (cfg.accounts||[]).forEach(a=>{const b=BR[a.id].bal;if(isInv(a)){inv+=b+(a.g||0);cost+=b}else if(isSave(a))sav+=b;else uang+=b});
   const gn=inv-cost,wt=uang+sav+inv;
   $("wTotal").textContent=sg(wt);window.__wt=wt;renderNW();
-  $("wChips").innerHTML=`<div class="chip">💵 Uang <b>${sg(uang)}</b></div>`+((cfg.accounts||[]).some(isSave)?`<div class="chip">🐷 Tabungan <b>${sg(sav)}</b></div>`:"")+((cfg.accounts||[]).some(isInv)?`<div class="chip">📈 Investasi <b>${sg(inv)}</b> <span style="color:${gn>=0?"var(--ok)":"var(--bad)"}">${gn>=0?"+":"-"}${rp(Math.abs(gn))}</span></div>`:"");
+  $("wChips").innerHTML=`<div class="chip">💵 Uang <b>${sg(uang)}</b></div>`+((cfg.accounts||[]).some(isSave)?`<div class="chip">🐷 Tabungan <b>${sg(sav)}</b></div>`:"")+((cfg.accounts||[]).some(isInv)?`<div class="chip">📈 Investasi <b>${sg(inv)}</b> <span style="color:${gn>=0?"var(--ok)":"var(--bad)"}">${gn>=0?"+":"-"}${rp(Math.abs(gn))}</span></div>`:"")+safeChip(uang);
   $("wNet").textContent=(featOn("debt")&&(su||sp))?`Setelah utang dan piutang: ${sg(wt-su+sp)}`:"";
   // pengingat
   const al=[];
@@ -1070,7 +1119,7 @@ function renderRep(){
   const un=mo?((repY===now.getFullYear()&&repM===now.getMonth()+1)?now.getDate():new Date(repY,repM,0).getDate()):(repY===now.getFullYear()?now.getMonth()+1:12);
   const mxT=L.reduce((a,b)=>b.amt>a.amt?b:a),chg=ptot?(tot-ptot)/ptot*100:null,bad=out?chg>0:chg<0;
   const by={};L.forEach(t=>by[t.cat]=(by[t.cat]||0)+t.amt);
-  const ents=Object.entries(by).sort((a,b)=>b[1]-a[1]),AC=allCats(),inf=k=>(out?AC:INC)[k]||BASE.Lainnya;
+  const ents=Object.entries(by).sort((a,b)=>b[1]-a[1]),AC=allCats(),inf=k=>(out?AC:incCats())[k]||BASE.Lainnya;
   const R=62,C=2*Math.PI*R;let off=0,dn=`<circle cx="85" cy="85" r="${R}" fill="none" stroke="var(--line)" stroke-width="20"/>`;
   ents.forEach(([k,v])=>{const l=Math.max(v/tot*C-3,1);dn+=`<circle cx="85" cy="85" r="${R}" fill="none" stroke="${inf(k).c}" stroke-width="20" stroke-dasharray="${l} ${C-l}" stroke-dashoffset="${-off}" transform="rotate(-90 85 85)"/>`;off+=v/tot*C});
   dn+=`<text x="85" y="82" text-anchor="middle" font-size="19" font-weight="800" fill="var(--tx)">${short(tot)}</text><text x="85" y="101" text-anchor="middle" font-size="11" fill="var(--mut)">total</text>`;
@@ -1152,7 +1201,7 @@ function renderGuide(){
   let off=false;try{off=localStorage.getItem("catatan-guide")==="1"}catch(e){}
   const a=(cfg.accounts||[]).length>0,t=tx.length>0;
   if(off||(a&&t)){$("guide").innerHTML="";return}
-  $("guide").innerHTML=`<div class="alert" style="border-color:var(--acc)"><b>👋 Mulai dalam 3 langkah</b><div style="margin-top:6px;line-height:2">${a?"✅":"1️⃣"} Tambah akun (BCA, GoPay, Tunai…) <button class="btn sec tsm" onclick="showTab('uang',1)">Tab Uang</button><br>${t?"✅":"2️⃣"} Catat transaksi pertama, misal ketik <i>bensin 30rb</i> <button class="btn sec tsm" onclick="showTab('catat',1)">Tab Catat</button><br>3️⃣ Lihat Laporan dan Kalender <button class="btn sec tsm" onclick="showTab('laporan',1)">Tab Laporan</button></div><button class="ib" style="padding:4px 0" onclick="try{localStorage.setItem('catatan-guide','1')}catch(e){};renderGuide()">Tutup panduan</button></div>`;
+  $("guide").innerHTML=`<div class="alert" style="border-color:var(--acc)"><b>👋 Mulai dalam 3 langkah</b><div style="margin-top:6px;line-height:2">${a?"✅":"1️⃣"} Tambah akun (BCA, GoPay, Tunai…) <button class="btn sec tsm" onclick="showTab('uang',1)">Tab Uang</button><br>${t?"✅":"2️⃣"} Catat transaksi pertama, misal ketik <i>bensin 30rb</i> <button class="btn sec tsm" onclick="showTab('catat',1)">Tab Catat</button><br>3️⃣ Lihat Laporan dan Kalender <button class="btn sec tsm" onclick="showTab('laporan',1)">Tab Laporan</button></div><button class="ib" style="padding:4px 0" onclick="try{localStorage.setItem('catatan-guide','1')}catch(e){};renderGuide()">Tutup panduan</button> <button class="ib" style="padding:4px 8px;color:var(--acc)" onclick="openGuide()">📖 Panduan lengkap</button></div>`;
 }
 // ketik cepat
 const DAYN={minggu:0,senin:1,selasa:2,rabu:3,kamis:4,jumat:5,"jum'at":5,sabtu:6};
@@ -1208,7 +1257,7 @@ function renderCal(ym){
   $("calD").innerHTML=calDay&&calDay.startsWith(ym)?`<div class="day"><span>${new Date(calDay+"T00:00").toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"short"})}</span><span></span></div>`+(tx.filter(t=>t.date===calDay&&(out?isOut(t):isIn(t))).sort((a,b)=>(b.time||"").localeCompare(a.time||"")).map(t=>`<div class="rk"><div class="ic" style="background:${catInfo(t).c}22">${catInfo(t).e}</div><div style="flex:1;min-width:0"><b style="display:block;font-size:13px">${esc(t.note)}</b><span style="font-size:11px;color:var(--mut)">${t.time?t.time+" · ":""}${esc(t.cat)}</span></div><b>${rp(t.amt)}</b></div>`).join("")||'<div class="hint">Tidak ada transaksi.</div>'):"";
 }
 // ===== v2.0 =====
-const VER="3.1";
+const VER="3.3";
 let rcount=0;
 const dmemo={},lmemo={};
 
@@ -1220,7 +1269,7 @@ const tokens=s=>words(s).filter(w=>w.length>=2&&!STOP.has(w)&&!/^\d+$/.test(w));
 function lev(a,b){const m=a.length,n=b.length;if(Math.abs(m-n)>2)return 9;let p=[];for(let j=0;j<=n;j++)p[j]=j;for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
 function dictFor(typ){
   const m=dmemo[typ];if(m&&m.key===rcount)return m.v;
-  const src=typ==="in"?INC:allCats(),E=[];
+  const src=typ==="in"?incCats():allCats(),E=[];
   for(const [cat,v] of Object.entries(src)){
     (v.k||[]).forEach(w=>E.push({w:w.toLowerCase(),cat}));
     if(cat!=="Lainnya"&&cat!=="Pemasukan lain")tokens(cat).forEach(w=>E.push({w,cat}));
@@ -1254,11 +1303,11 @@ function suggest(text,typ){
   if(!Object.keys(sc).length){
     tk.filter(w=>w.length>=5).forEach(w=>{for(const e of D.fz){const d=lev(w,e.w);if(d<=(w.length>=8?2:1)){sc[e.cat]=(sc[e.cat]||0)+(3-d);if(!why[e.cat])why[e.cat]="mirip"}}});
   }
-  const ord=Object.keys(typ==="in"?INC:allCats());
+  const ord=Object.keys(typ==="in"?incCats():allCats());
   return Object.entries(sc).sort((a,b)=>(b[1]-a[1])||(ord.indexOf(a[0])-ord.indexOf(b[0]))).slice(0,3).map(([cat])=>({cat,why:why[cat]}));
 }
 let sgList=[];
-const catEm=c=>((type==="in"?INC:allCats())[c]||{}).e||"";
+const catEm=c=>((type==="in"?incCats():allCats())[c]||{}).e||"";
 function renderSg(){
   const el=$("sugg");
   if(!sgList.length||type==="tf"){el.style.display="none";el.innerHTML="";return}
@@ -1276,7 +1325,7 @@ let rcTouched=false;
 $("rc").addEventListener("change",()=>rcTouched=true);
 $("rn").addEventListener("input",e=>{if(rcTouched)return;const s=suggest(e.target.value,$("rt").value);if(s.length)$("rc").value=s[0].cat});
 $("rt").addEventListener("change",()=>{rcTouched=false;fillRc()});
-function fillRc(){const src=$("rt").value==="in"?INC:allCats(),v=$("rc").value;$("rc").innerHTML=Object.keys(src).map(k=>`<option>${esc(k)}</option>`).join("");if(src[v])$("rc").value=v}
+function fillRc(){const src=$("rt").value==="in"?incCats():allCats(),v=$("rc").value;$("rc").innerHTML=Object.keys(src).map(k=>`<option>${esc(k)}</option>`).join("");if(src[v])$("rc").value=v}
 
 // rapikan "Lainnya"
 let tdOff=new Set();
@@ -1382,7 +1431,7 @@ window.redoMig=()=>{cfg.noMig=false;saveCfg().then(()=>migrateGoals())};
 
 // ---------- versi & apa yang baru ----------
 const NEWS0=["⬅️➡️ Panah ‹ › di baris tab untuk pindah tab (bisa dimatikan), dan opsi geser layar kiri-kanan. Cek Pengaturan → Tampilan.","🔤 Lebih banyak pilihan font.","🧠 Kategori lebih pintar: belajar dari catatanmu, mengenali salah ketik, dan ada saran kategori. Ada juga tombol Rapikan \"Lainnya\" di Pengaturan.","🔁 Transaksi berulang kini bisa diedit, dijeda, dilewati sekali, dan bisa untuk pemasukan.","🐷 Target tabungan diganti akun Tabungan di kartu Akun. Setor dan tarik lewat Transfer, jadi uangnya nyata.","📅 Ringkasan 7 hari di tab Laporan, bisa dibagikan ke WhatsApp.","📤 Tombol Bagikan cadangan, dan perlindungan penyimpanan di Pengaturan."];
-const NEWS=NEWS0.map(t=>["2.0",t]).concat([["3.1","🛠️ Perbaikan: akun investasi bisa dibuat di mode sederhana, pesan jelas saat isian kosong atau salah, nominal terlalu besar dibatasi, impor menolak nominal tidak valid, ketik cepat membaca 1.5jt dan menolak angka minus, urutan kartu Catat di layar lebar mengikuti pengaturan."],["3.0","🔁 Pindah HP lewat cadangan: transaksi berulang yang sudah tercatat tidak lagi terhitung dua kali."],["2.9","📦 Cadangan JSON sekarang ikut membawa tata letak: urutan kartu di tiap tab, mode tampilan, font, warna, ukuran, dan pilihan sembunyikan nominal. Saat dipulihkan di HP lain, posisinya sama persis."],["2.8","✨ Namanya sekarang Nyatet, dengan logo dompet 3D yang baru."],["2.7","🛠️ Impor cadangan lebih akurat: transaksi kembar di hari yang sama tidak lagi hilang, dan pengaturan tampilan serta fitur Berulang ikut terbawa."],["2.1","🖥️ Tampilan di PC lebih rapi: dua kolom yang tertata, tidak ada kartu menggantung sendirian."],["2.1","🔀 Kartu Aliran uang di tab Laporan: lihat uang tiap akun dipakai untuk apa dan pindah ke mana. Di tab Uang, tap 🔀 pada akun mana pun untuk langsung ke sana."],["2.2","👁️ Tombol mata di kartu ungu untuk menyembunyikan semua nominal, seperti aplikasi bank. Pilihanmu diingat."],["2.6","📲 Aplikasi bisa dipasang di layar utama HP (menu ⋮ Chrome lalu Instal aplikasi), tampil layar penuh dan tetap bisa dibuka tanpa internet. Kalau ada versi baru, muncul tombol Muat ulang."],["2.5","📱 Menu tab sekarang tetap di bawah layar di HP dan tidak ikut bergulir."],["2.5","💼 Transaksi berulang punya tombol cepat Gajian bulanan dan Tagihan bulanan, dan Total aset menampilkan kapan gajian berikutnya."],["2.5","🎨 Logo baru dan ilustrasi di tampilan yang masih kosong."],["2.4","🔧 Mengubah saldo akun sekarang lewat jendela sendiri, jadi keyboard di HP tidak turun lagi saat mengetik."],["2.4","🔁 Transaksi berulang kini wajib memilih akun, dan akunnya bisa diganti langsung dari daftarnya. Transaksi lama tanpa akun ikut terisi."],["2.3","🗑️ Akun yang sudah punya transaksi sekarang bisa dihapus: pilih pindahkan transaksinya ke akun lain, lepaskan dari akun, atau hapus ikut transaksinya."],["2.3","📈 Grafik total aset dari waktu ke waktu di tab Uang, dengan tabel per bulan."],["2.3","🎯 Tabungan punya tenggat: aplikasi menghitung berapa yang perlu ditabung per bulan."],["2.3","⚖️ Penyesuaian saldo kini tercatat di riwayat, tidak dihitung sebagai pemasukan atau pengeluaran."],["2.3","📅 Ringkasan minggu lalu muncul otomatis di awal minggu. Bisa dimatikan di Tampilan."],["2.2","📅 Riwayat: selain bulan yang dipilih, sekarang bisa memilih rentang tanggal (dari tanggal sampai tanggal) dengan ringkasan masuk dan keluarnya."]]);
+const NEWS=NEWS0.map(t=>["2.0",t]).concat([["3.3","➕ di akun uang bisa mencatat pemasukan baru (gaji, dll) tanpa akun asal."],["3.2","➕➖ di setiap akun memindahkan dana langsung dari/ke akun lain. Kategori pemasukan buatan sendiri, Laporan jadi 3 tab, tombol ⧉ duplikat, cari nominal, ⓘ penjelasan tiap kartu, dan 📖 Panduan di Pengaturan"],["3.1","🛠️ Perbaikan: akun investasi bisa dibuat di mode sederhana, pesan jelas saat isian kosong atau salah, nominal terlalu besar dibatasi, impor menolak nominal tidak valid, ketik cepat membaca 1.5jt dan menolak angka minus, urutan kartu Catat di layar lebar mengikuti pengaturan."],["3.0","🔁 Pindah HP lewat cadangan: transaksi berulang yang sudah tercatat tidak lagi terhitung dua kali."],["2.9","📦 Cadangan JSON sekarang ikut membawa tata letak: urutan kartu di tiap tab, mode tampilan, font, warna, ukuran, dan pilihan sembunyikan nominal. Saat dipulihkan di HP lain, posisinya sama persis."],["2.8","✨ Namanya sekarang Nyatet, dengan logo dompet 3D yang baru."],["2.7","🛠️ Impor cadangan lebih akurat: transaksi kembar di hari yang sama tidak lagi hilang, dan pengaturan tampilan serta fitur Berulang ikut terbawa."],["2.1","🖥️ Tampilan di PC lebih rapi: dua kolom yang tertata, tidak ada kartu menggantung sendirian."],["2.1","🔀 Kartu Aliran uang di tab Laporan: lihat uang tiap akun dipakai untuk apa dan pindah ke mana. Di tab Uang, tap 🔀 pada akun mana pun untuk langsung ke sana."],["2.2","👁️ Tombol mata di kartu ungu untuk menyembunyikan semua nominal, seperti aplikasi bank. Pilihanmu diingat."],["2.6","📲 Aplikasi bisa dipasang di layar utama HP (menu ⋮ Chrome lalu Instal aplikasi), tampil layar penuh dan tetap bisa dibuka tanpa internet. Kalau ada versi baru, muncul tombol Muat ulang."],["2.5","📱 Menu tab sekarang tetap di bawah layar di HP dan tidak ikut bergulir."],["2.5","💼 Transaksi berulang punya tombol cepat Gajian bulanan dan Tagihan bulanan, dan Total aset menampilkan kapan gajian berikutnya."],["2.5","🎨 Logo baru dan ilustrasi di tampilan yang masih kosong."],["2.4","🔧 Mengubah saldo akun sekarang lewat jendela sendiri, jadi keyboard di HP tidak turun lagi saat mengetik."],["2.4","🔁 Transaksi berulang kini wajib memilih akun, dan akunnya bisa diganti langsung dari daftarnya. Transaksi lama tanpa akun ikut terisi."],["2.3","🗑️ Akun yang sudah punya transaksi sekarang bisa dihapus: pilih pindahkan transaksinya ke akun lain, lepaskan dari akun, atau hapus ikut transaksinya."],["2.3","📈 Grafik total aset dari waktu ke waktu di tab Uang, dengan tabel per bulan."],["2.3","🎯 Tabungan punya tenggat: aplikasi menghitung berapa yang perlu ditabung per bulan."],["2.3","⚖️ Penyesuaian saldo kini tercatat di riwayat, tidak dihitung sebagai pemasukan atau pengeluaran."],["2.3","📅 Ringkasan minggu lalu muncul otomatis di awal minggu. Bisa dimatikan di Tampilan."],["2.2","📅 Riwayat: selain bulan yang dipilih, sekarang bisa memilih rentang tanggal (dari tanggal sampai tanggal) dengan ringkasan masuk dan keluarnya."]]);
 let newsSeen="";
 let showNews=false;
 function checkVersion(){
@@ -1648,7 +1697,7 @@ function flowData(){
     }
     if(id&&t.acc!==id)return;
     if(isAdj(t)){if(t.dir<0){add(outs,"Penyesuaian saldo","⚖️","#94a3b8",t.amt);sumOut+=t.amt}else{add(ins,"Penyesuaian saldo","⚖️","#94a3b8",t.amt);sumIn+=t.amt}return}
-    if(isIn(t)){const c=INC[t.cat]||{e:"💰",c:"#84cc16"};add(ins,t.cat,c.e,c.c,t.amt);sumIn+=t.amt}
+    if(isIn(t)){const c=incCats()[t.cat]||{e:"💰",c:"#84cc16"};add(ins,t.cat,c.e,c.c,t.amt);sumIn+=t.amt}
     else{const c=AC[t.cat]||BASE.Lainnya;add(outs,t.cat,c.e,c.c,t.amt);sumOut+=t.amt}
   });
   (cfg.debts||[]).forEach(d=>{
@@ -1738,6 +1787,13 @@ const initP=(async()=>{
   }catch(e){if(wasDb){bootHold("Terjadi kendala saat memuat. Tutup lalu buka lagi.");return "hold"}txCol=null;cfgDoc=null;return "local"}
 })();
 initP.then(r=>{if(r==="local"){applyRecur();bootOff()}});
+
+// ===== panduan pemula =====
+const INFO={cWeek:"Total pengeluaran 7 hari terakhir dibanding 7 hari sebelumnya.",cWealth:"Total uang kamu: akun uang + tabungan + nilai investasi.",cNW:"Grafik total aset dari waktu ke waktu.",cAcc:"Daftar akunmu. ➕ menambah dana, ➖ mengurangi dana (dari/ke akun lain), ✏️ memperbaiki saldo atau nilai, 🔀 melihat aliran uang, 🗑️ menghapus.",cDebt:"Catat utang dan piutang, lalu cicil lewat tombol Bayar.",cType:"Ketik satu kalimat seperti: bensin 30rb. Aplikasi menebak nominal dan kategorinya.",cQuick:"Transaksi favorit: tap sekali untuk mencatat hari ini.",cForm:"Catat pengeluaran, pemasukan, atau transfer antar akun secara lengkap.",cHist:"Semua transaksi. Tap barisnya untuk mengedit, ⧉ menduplikat ke hari ini, 🗑️ menghapus.",cRep:"Ringkasan per bulan atau tahun: ke mana uang pergi dan dari mana datang.",cFlow:"Uang tiap akun dipakai untuk apa dan pindah ke mana.",cCal:"Kalender: warna lebih pekat berarti lebih banyak uang keluar di hari itu.",cInsight:"Kesimpulan singkat otomatis dari catatan bulan ini.",cTrend:"Tren pengeluaran dari waktu ke waktu.",cDonut:"Porsi tiap kategori dalam pengeluaran bulan ini.",cBars:"Pengeluaran per hari selama seminggu terakhir.",cCmp:"Perbandingan bulan ini dengan bulan lalu.",cTag:"Kelompok transaksi dengan tag yang sama, misal Liburan Bali.",cBud:"Batas pengeluaran bulanan. Bar berubah warna saat mendekati batas.",cCatBud:"Batas tersendiri untuk tiap kategori.",cRecur:"Transaksi otomatis berulang: gaji, langganan, cicilan. Tercatat sendiri pada tanggalnya.",cMode:"Sederhana menyembunyikan fitur lanjutan. Pilih Lengkap untuk membuka semuanya.",cCats:"Tambah kategori sendiri, untuk pengeluaran maupun pemasukan.",cUI:"Ukuran, warna, font, dan urutan kartu di tiap tab.",cTidy:"Memindahkan transaksi kategori Lainnya ke kategori yang lebih tepat.",cExp:"Unduh cadangan, impor cadangan, atau pindah ke HP lain. Cadangan JSON membawa catatan dan tata letak."};
+function initInfo(){Object.entries(INFO).forEach(([id,txt])=>{const c=$(id),h=c&&c.querySelector("h2");if(!h||h.querySelector(".infob"))return;const tb=c.querySelector(".tipb");if(tb){const n=document.createElement("div");n.className="hint tip";n.textContent=txt;h.insertAdjacentElement("afterend",n);const old=tb.onclick;tb.onclick=(...a)=>{if(old)old.apply(tb,a);n.classList.toggle("open")};return}const b=document.createElement("button");b.className="ib infob";b.type="button";b.textContent="ⓘ";b.title="Apa ini?";b.style.cssText="padding:0 6px;font-size:14px;vertical-align:middle;color:var(--acc)";b.onclick=e=>{e.stopPropagation();let n=c.querySelector(".infot");if(n){n.remove();return}n=document.createElement("div");n.className="hint infot";n.style.cssText="margin:0 0 8px;padding:8px 10px;background:var(--bg);border-radius:10px";n.textContent=txt;h.insertAdjacentElement("afterend",n)};h.appendChild(b)})}
+const GUIDE=[["🚀 Mulai dari mana?","1) Buka tab Uang dan tambah akun (BCA, GoPay, Tunai). 2) Di tab Catat ketik misal “bensin 30rb” lalu Simpan. 3) Lihat hasilnya di tab Laporan."],["📝 Tab Catat","Ketik cepat menebak nominal dan kategori dari kalimatmu. Form transaksi untuk catatan lengkap: pengeluaran, pemasukan, atau transfer. Di Riwayat, tap baris untuk mengedit, ⧉ untuk menduplikat ke hari ini, 🗑️ untuk menghapus. Kolom cari bisa mencari nama, kategori, tag, atau nominal."],["💰 Tab Uang","Tiap akun punya tombol: ➕ menambah dana (dari pemasukan baru seperti gaji, atau dari akun lain), ➖ mengurangi dana (pilih pindah ke akun mana), ✏️ memperbaiki saldo, 🔀 melihat aliran uang, 🗑️ menghapus. Di akun uang, ➕ bisa mencatat pemasukan baru (misal gaji) tanpa akun asal, sehingga total aset bertambah. Memilih akun lain atau memakai ➖ hanya memindahkan uang, total aset tidak berubah."],["🐷 Tabungan dan 📈 Investasi","Tabungan adalah celengan untuk satu tujuan dengan target opsional. Di akun investasi, ➕ menambah modal dan ➖ menarik ke akun lain. ✏️ dipakai untuk mengisi nilai pasar terbaru, dan selisihnya muncul sebagai untung atau rugi."],["🤝 Utang & piutang","Aktifkan di Pengaturan, Mode fitur. Catat siapa, berapa, dan jatuh temponya. Tiap cicilan dicatat lewat tombol Bayar."],["📊 Tab Laporan","Terbagi tiga: Ringkasan (angka utama dan insight), Pola (aliran uang, kalender, tren, kategori), Bandingkan (7 hari, bulan lalu, tag)."],["🎯 Budget dan 🔁 Berulang","Budget membatasi pengeluaran per bulan atau per kategori. Berulang mencatat otomatis transaksi rutin seperti gaji atau langganan, di tanggal yang kamu pilih."],["💾 Cadangan & pindah HP","Data tersimpan di browser HP ini saja. Di Pengaturan, Cadangan & impor, unduh atau bagikan file cadangan JSON. Di HP baru, impor file itu: catatan, akun, dan tata letak ikut pindah."],["🔄 Transfer atau pemasukan?","Transfer memindahkan uang antar akunmu sendiri dan tidak menambah atau mengurangi total aset. Pemasukan adalah uang baru yang masuk, misal gaji."]];
+window.openGuide=()=>{$("shBody").innerHTML=`<h2 style="margin-bottom:8px">📖 Panduan Nyatet</h2>`+GUIDE.map(([t,b],i)=>`<details ${i===0?"open":""} style="border-top:1px solid var(--line);padding:8px 0"><summary style="font-weight:700;cursor:pointer">${t}</summary><div class="hint" style="margin:6px 0 0;line-height:1.55">${esc(b)}</div></details>`).join("")+`<button class="btn" style="width:100%;margin-top:12px" onclick="closeSheet()">Tutup</button>`;$("sheet").style.display="flex"};
+initInfo();
 </script>
 </body>
 </html>

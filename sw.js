@@ -1,5 +1,5 @@
 // Nyatet: service worker. Ubah V setiap rilis supaya HP mendeteksi versi baru.
-const V = "3.1";
+const V = "3.3";
 const CORE = "catatan-core-" + V, EXT = "catatan-ext";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
